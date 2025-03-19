@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eye-image-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: eye-image-api
+  template:
+    metadata:
+      labels:
+        app: eye-image-api
+    spec:
+      containers:
+      - name: eye-image-api
+        image: your-image-name:latest
+        ports:
+        - containerPort: 5000
+        env:
+        - name: DATABASE_URL
+          value: "mysql+mysqlconnector://root:59fh8r22@test-db-mysql.ns-32fwr7d7.svc:3306/test_db"
+        volumeMounts:
+        - name: uploads
+          mountPath: /app/uploads
+      volumes:
+      - name: uploads
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: eye-image-api
+spec:
+  selector:
+    app: eye-image-api
+  ports:
+  - port: 80
+    targetPort: 5000
+  type: ClusterIP 
