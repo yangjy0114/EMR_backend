@@ -182,6 +182,7 @@ class AIAnalysisResult(db.Model):
     scan_id = db.Column(db.BigInteger, db.ForeignKey('scans.id'), nullable=False)
     segmentation_image_path = db.Column(db.String(255), nullable=True)
     classification_result = db.Column(db.String(100), nullable=True)
+    report = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     # 关联关系
