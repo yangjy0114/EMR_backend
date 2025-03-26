@@ -10,7 +10,7 @@ class Config:
 class DevelopmentConfig(Config):
     """开发环境配置"""
     DEBUG = True
-    SQLALCHEMY_DATABASE_URI = 'mysql://root:59fh8r22@test-db-mysql.ns-32fwr7d7.svc:3306'
+    SQLALCHEMY_DATABASE_URI = 'mysql+mysqlconnector://root:59fh8r22@test-db-mysql.ns-32fwr7d7.svc:3306/test_db'
 
 class ProductionConfig(Config):
     """生产环境配置"""

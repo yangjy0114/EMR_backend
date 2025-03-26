@@ -6,8 +6,12 @@ from werkzeug.utils import secure_filename
 from models import db, Patient, Doctor, Scan, Image, SegmentedImage
 import logging
 from sqlalchemy.exc import SQLAlchemyError
-from services.segmentation_service import SegmentationService
+from services.ai_service import AIService
 from routes.auth import auth_bp
+from routes.patient import patient_bp
+from routes.medical_record import medical_record_bp
+from routes.scan import scan_bp
+from routes.ai import ai_bp
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -28,6 +32,8 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key')
 # 确保上传目录存在
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs('images/segmented', exist_ok=True)
+os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'scans'), exist_ok=True)
+os.makedirs('images/segmentation', exist_ok=True)
 
 # 初始化数据库
 db.init_app(app)
@@ -36,13 +42,22 @@ db.init_app(app)
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'tiff', 'tif'}
 
 # 初始化分割服务
-segmentation_service = SegmentationService(
-    model_path='caffnet/models/best_model.pth',
-    output_dir='images/segmented'
-)
+ai_service = AIService()
 
 # 注册认证蓝图
 app.register_blueprint(auth_bp)
+
+# 注册患者蓝图
+app.register_blueprint(patient_bp)
+
+# 注册病历管理蓝图
+app.register_blueprint(medical_record_bp)
+
+# 注册扫描蓝图
+app.register_blueprint(scan_bp)
+
+# 注册AI蓝图
+app.register_blueprint(ai_bp)
 
 def allowed_file(filename):
     """检查文件扩展名是否允许"""
@@ -232,7 +247,7 @@ def segment_image():
         
         try:
             # 执行分割
-            output_path = segmentation_service.segment_image(image.image_path)
+            output_path = ai_service.segment_image(image.image_path)
             
             # 更新分割记录
             segmented.segmented_image_path = output_path
@@ -269,6 +284,72 @@ def get_segmented_image(segmented_id):
         
     except Exception as e:
         logger.error(f"获取分割图像时发生错误: {str(e)}")
+        return jsonify({'error': '服务器内部错误'}), 500
+
+@app.route('/api/images/<filename>', methods=['GET'])
+def get_image(filename):
+    """获取图像文件"""
+    try:
+        # 安全检查：防止路径遍历攻击
+        if '..' in filename or filename.startswith('/'):
+            return jsonify({'error': '无效的文件名'}), 400
+            
+        # 构建文件路径
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], 'scans', filename)
+        
+        # 检查文件是否存在
+        if not os.path.exists(file_path):
+            return jsonify({'error': '文件不存在'}), 404
+            
+        # 返回文件
+        return send_file(file_path)
+        
+    except Exception as e:
+        logger.error(f"获取图像文件时出错: {str(e)}")
+        return jsonify({'error': '服务器内部错误'}), 500
+
+@app.route('/api/originals/<filename>', methods=['GET'])
+def get_original_image(filename):
+    """获取原始图像文件"""
+    try:
+        # 安全检查：防止路径遍历攻击
+        if '..' in filename or filename.startswith('/'):
+            return jsonify({'error': '无效的文件名'}), 400
+            
+        # 构建文件路径
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], 'originals', filename)
+        
+        # 检查文件是否存在
+        if not os.path.exists(file_path):
+            return jsonify({'error': '文件不存在'}), 404
+            
+        # 返回文件
+        return send_file(file_path)
+        
+    except Exception as e:
+        logger.error(f"获取原始图像文件时出错: {str(e)}")
+        return jsonify({'error': '服务器内部错误'}), 500
+
+@app.route('/api/images/segmentation/<filename>', methods=['GET'])
+def get_segmentation_image(filename):
+    """获取分割图像文件"""
+    try:
+        # 安全检查：防止路径遍历攻击
+        if '..' in filename or filename.startswith('/'):
+            return jsonify({'error': '无效的文件名'}), 400
+            
+        # 构建文件路径
+        file_path = os.path.join('images/segmentation', filename)
+        
+        # 检查文件是否存在
+        if not os.path.exists(file_path):
+            return jsonify({'error': '文件不存在'}), 404
+            
+        # 返回文件
+        return send_file(file_path)
+        
+    except Exception as e:
+        logger.error(f"获取分割图像文件时出错: {str(e)}")
         return jsonify({'error': '服务器内部错误'}), 500
 
 @app.errorhandler(SQLAlchemyError)

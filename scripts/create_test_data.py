@@ -13,7 +13,7 @@ def create_test_data():
         try:
             # 检查是否已存在
             existing_doctor = Doctor.query.get("1")
-            existing_patient = Patient.query.get("1")
+            existing_patient = Patient.query.filter_by(serial_no='TEST001').first()
             
             if not existing_doctor:
                 # 创建测试医生
@@ -27,11 +27,12 @@ def create_test_data():
             if not existing_patient:
                 # 创建测试患者
                 patient = Patient(
-                    patient_id="1",
                     name="测试患者",
                     gender="男",
                     age=30,
-                    medical_history="无"
+                    serial_no='TEST001',
+                    card_no='CARD001',
+                    status='waiting'
                 )
                 db.session.add(patient)
             
@@ -40,12 +41,12 @@ def create_test_data():
             
             # 验证数据
             verify_doctor = Doctor.query.get("1")
-            verify_patient = Patient.query.get("1")
+            verify_patient = Patient.query.filter_by(serial_no='TEST001').first()
             
             if verify_doctor and verify_patient:
                 print("\n数据验证成功：")
                 print(f"医生信息: ID={verify_doctor.doctor_id}, 姓名={verify_doctor.name}")
-                print(f"患者信息: ID={verify_patient.patient_id}, 姓名={verify_patient.name}")
+                print(f"患者信息: ID={verify_patient.id}, 姓名={verify_patient.name}")
             else:
                 print("\n警告：数据验证失败！")
                 

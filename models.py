@@ -1,5 +1,7 @@
 from datetime import datetime
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.types import DECIMAL
+import os
 
 db = SQLAlchemy()
 
@@ -7,14 +9,69 @@ class Patient(db.Model):
     """患者信息表"""
     __tablename__ = 'patients'
     
-    patient_id = db.Column(db.String(36), primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    gender = db.Column(db.String(10))
-    age = db.Column(db.Integer)
-    medical_history = db.Column(db.Text)
+    id = db.Column(db.BigInteger, primary_key=True)
+    name = db.Column(db.String(50), nullable=False)
+    gender = db.Column(db.String(10), nullable=False)
+    age = db.Column(db.Integer, nullable=False)
+    serial_no = db.Column(db.String(50), unique=True, nullable=False)
+    card_no = db.Column(db.String(50), unique=True, nullable=False)
+    status = db.Column(db.Enum('waiting', 'in_treatment', 'treated', name='patient_status'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # 关联关系
-    scans = db.relationship('Scan', backref='patient', lazy=True)
+    medical_history = db.relationship('MedicalHistory', backref='patient', uselist=False, lazy=True)
+    medical_records = db.relationship('MedicalRecord', backref='patient', lazy=True)
+
+class MedicalHistory(db.Model):
+    """病史信息表"""
+    __tablename__ = 'medical_histories'
+    
+    id = db.Column(db.BigInteger, primary_key=True)
+    patient_id = db.Column(db.BigInteger, db.ForeignKey('patients.id'), nullable=False)
+    allergies = db.Column(db.Text)
+    history = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class MedicalRecord(db.Model):
+    """就诊记录表"""
+    __tablename__ = 'medical_records'
+    
+    id = db.Column(db.BigInteger, primary_key=True)
+    patient_id = db.Column(db.BigInteger, db.ForeignKey('patients.id'), nullable=False)
+    doctor_id = db.Column(db.BigInteger, db.ForeignKey('users.id'), nullable=False)
+    visit_time = db.Column(db.DateTime, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # 关联关系
+    diagnoses = db.relationship('Diagnosis', backref='record', lazy=True)
+    prescriptions = db.relationship('Prescription', backref='record', lazy=True)
+
+class Diagnosis(db.Model):
+    """诊断信息表"""
+    __tablename__ = 'diagnoses'
+    
+    id = db.Column(db.BigInteger, primary_key=True)
+    record_id = db.Column(db.BigInteger, db.ForeignKey('medical_records.id'), nullable=False)
+    type = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class Prescription(db.Model):
+    """处方信息表"""
+    __tablename__ = 'prescriptions'
+    
+    id = db.Column(db.BigInteger, primary_key=True)
+    record_id = db.Column(db.BigInteger, db.ForeignKey('medical_records.id'), nullable=False)
+    medicine = db.Column(db.String(100), nullable=False)
+    specification = db.Column(db.String(100))
+    dosage = db.Column(db.String(50))
+    frequency = db.Column(db.String(50))
+    days = db.Column(db.String(20))
+    price = db.Column(DECIMAL(10, 2))
+    effect = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class Doctor(db.Model):
     """医生信息表"""
@@ -28,21 +85,31 @@ class Scan(db.Model):
     """扫描记录表"""
     __tablename__ = 'scans'
     
-    scan_id = db.Column(db.String(36), primary_key=True)
-    patient_id = db.Column(db.String(36), db.ForeignKey('patients.patient_id'), nullable=False)
-    doctor_id = db.Column(db.String(36), db.ForeignKey('doctors.doctor_id'), nullable=False)
-    scan_date = db.Column(db.DateTime, default=datetime.utcnow)
+    id = db.Column(db.BigInteger, primary_key=True)
+    patient_id = db.Column(db.BigInteger, db.ForeignKey('patients.id'), nullable=False)
+    doctor_id = db.Column(db.BigInteger, db.ForeignKey('users.id'), nullable=False)
+    medical_record_id = db.Column(db.BigInteger, db.ForeignKey('medical_records.id'), nullable=True)
+    scan_type = db.Column(db.Enum('OCT', 'Fundus', 'Both', name='scan_type'), nullable=False)
+    scan_time = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    # 显示用的PNG图像路径
+    oct_image_path = db.Column(db.String(255))
+    fundus_image_path = db.Column(db.String(255))
+    # 原始TIF图像路径
+    oct_original_path = db.Column(db.String(255))
+    fundus_original_path = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     # 关联关系
-    images = db.relationship('Image', backref='scan', lazy=True)
-    reports = db.relationship('Report', backref='scan', lazy=True)
+    patient = db.relationship('Patient', backref='scans')
+    doctor = db.relationship('User', backref='scans')
+    medical_record = db.relationship('MedicalRecord', backref='scans')
 
 class Image(db.Model):
     """图像信息表"""
     __tablename__ = 'images'
     
     image_id = db.Column(db.String(36), primary_key=True)
-    scan_id = db.Column(db.String(36), db.ForeignKey('scans.scan_id'), nullable=False)
+    scan_id = db.Column(db.BigInteger, db.ForeignKey('scans.id'), nullable=False)
     image_type = db.Column(db.String(50), nullable=False)  # OCT或眼底图像
     image_path = db.Column(db.String(255), nullable=False)
     is_segmented = db.Column(db.Boolean, default=False)
@@ -75,7 +142,7 @@ class Report(db.Model):
     __tablename__ = 'reports'
     
     report_id = db.Column(db.String(36), primary_key=True)
-    scan_id = db.Column(db.String(36), db.ForeignKey('scans.scan_id'), nullable=False)
+    scan_id = db.Column(db.BigInteger, db.ForeignKey('scans.id'), nullable=False)
     report_content = db.Column(db.Text, nullable=False)
     generation_date = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -106,3 +173,23 @@ class User(db.Model):
     last_login_at = db.Column(db.DateTime)
     login_fails = db.Column(db.Integer, default=0)  # 登录失败次数
     is_locked = db.Column(db.Boolean, default=False)  # 是否锁定 
+
+class AIAnalysisResult(db.Model):
+    """AI分析结果表"""
+    __tablename__ = 'ai_analysis_results'
+    
+    id = db.Column(db.BigInteger, primary_key=True)
+    scan_id = db.Column(db.BigInteger, db.ForeignKey('scans.id'), nullable=False)
+    segmentation_image_path = db.Column(db.String(255), nullable=True)
+    classification_result = db.Column(db.String(100), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # 关联关系
+    scan = db.relationship('Scan', backref='ai_analysis_results')
+    
+    # 添加属性方法来获取 segmentation_image_url
+    @property
+    def segmentation_image_url(self):
+        if self.segmentation_image_path:
+            return f"/api/images/segmentation/{os.path.basename(self.segmentation_image_path)}"
+        return None 
