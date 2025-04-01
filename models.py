@@ -192,5 +192,32 @@ class AIAnalysisResult(db.Model):
     @property
     def segmentation_image_url(self):
         if self.segmentation_image_path:
-            return f"/api/images/segmentation/{os.path.basename(self.segmentation_image_path)}"
+            # 从路径中提取文件名
+            filename = os.path.basename(self.segmentation_image_path)
+            
+            # 确定图像类型
+            if '/fundus/' in self.segmentation_image_path:
+                return f"/api/segmentation/fundus/{filename}"
+            elif '/oct/' in self.segmentation_image_path:
+                return f"/api/segmentation/oct/{filename}"
+            else:
+                # 如果路径中没有类型信息，尝试从文件名判断
+                if 'fundus' in filename:
+                    return f"/api/segmentation/fundus/{filename}"
+                elif 'oct' in filename:
+                    return f"/api/segmentation/oct/{filename}"
+                else:
+                    # 默认返回
+                    return f"/api/segmentation/{filename}"
         return None 
+
+class PatientScanMapping(db.Model):
+    __tablename__ = 'patient_scan_mappings'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    patient_id = db.Column(db.Integer, db.ForeignKey('patients.id'), nullable=False)
+    scan_id = db.Column(db.Integer, db.ForeignKey('scans.id'), nullable=False)
+    
+    # 关系
+    patient = db.relationship('Patient', backref=db.backref('scan_mappings', lazy=True))
+    scan = db.relationship('Scan', backref=db.backref('patient_mapping', lazy=True)) 

@@ -5,6 +5,8 @@ from services.ai_service import AIService
 import logging
 import os
 from datetime import datetime
+from werkzeug.utils import secure_filename
+from flask import current_app
 
 logger = logging.getLogger(__name__)
 ai_bp = Blueprint('ai', __name__, url_prefix='/api/ai')
@@ -12,69 +14,98 @@ ai_bp = Blueprint('ai', __name__, url_prefix='/api/ai')
 @ai_bp.route('/analyze/image', methods=['POST'])
 @login_required
 def analyze_image():
-    """AI影像分析接口"""
+    """分析上传的图像"""
     try:
-        # 获取请求参数
-        scan_id = request.form.get('scanId')
-        image_type = request.form.get('imageType')
-        
-        # 参数验证
-        if not scan_id or not image_type:
-            return jsonify({
-                'code': 400,
-                'message': '缺少必要参数'
-            }), 400
+        # 检查是否有文件上传
+        if 'image' not in request.files:
+            return jsonify({'code': 400, 'message': '没有上传图像'}), 400
             
-        if image_type not in ['OCT', 'Fundus', 'Both']:
-            return jsonify({
-                'code': 400,
-                'message': '无效的图像类型'
-            }), 400
+        file = request.files['image']
+        if file.filename == '':
+            return jsonify({'code': 400, 'message': '没有选择图像'}), 400
             
-        # 获取扫描记录
-        scan = Scan.query.get(scan_id)
-        if not scan:
-            return jsonify({
-                'code': 404,
-                'message': '扫描记录不存在'
-            }), 404
+        # 获取图像类型参数
+        image_type = request.form.get('imageType', 'Fundus')
+        
+        # 获取患者ID参数
+        patient_id = request.form.get('patientId')
+        if not patient_id:
+            return jsonify({'code': 400, 'message': '缺少患者ID参数'}), 400
             
-        # 添加调试日志
-        logger.info(f"扫描记录ID: {scan.id}")
-        logger.info(f"OCT图像路径: {scan.oct_image_path}")
-        logger.info(f"眼底图像路径: {scan.fundus_image_path}")
-        logger.info(f"OCT原始路径: {scan.oct_original_path}")
-        logger.info(f"眼底原始路径: {scan.fundus_original_path}")
+        # 保存上传的图像
+        filename = secure_filename(file.filename)
         
-        # 调用AI服务进行分析
-        ai_service = AIService()
-        result = ai_service.analyze_images(scan, image_type)
+        # 确定保存路径
+        if image_type.lower() == 'oct':
+            png_path = os.path.join(current_app.config['UPLOAD_FOLDER_OCT'], filename)
+            tif_filename = filename.replace('.png', '.tif') if filename.endswith('.png') else filename
+            tif_path = os.path.join(current_app.config['ORIGINAL_FOLDER_OCT'], tif_filename)
+        else:  # Fundus
+            png_path = os.path.join(current_app.config['UPLOAD_FOLDER_FUNDUS'], filename)
+            tif_filename = filename.replace('.png', '.tif') if filename.endswith('.png') else filename
+            tif_path = os.path.join(current_app.config['ORIGINAL_FOLDER_FUNDUS'], tif_filename)
+            
+        # 保存文件
+        file.save(png_path)
         
-        # 保存分析结果
-        analysis_result = AIAnalysisResult(
-            scan_id=scan_id,
-            segmentation_image_path=result['segmentation_image_path'],
-            classification_result=result['classification_result']
+        # 如果是PNG格式，转换为TIF
+        if filename.lower().endswith('.png'):
+            from PIL import Image
+            img = Image.open(png_path)
+            img.save(tif_path)
+            
+        # 创建临时扫描记录
+        scan = Scan(
+            patient_id=patient_id,
+            created_at=datetime.utcnow()
         )
-        db.session.add(analysis_result)
+        
+        # 设置图像路径
+        if image_type.lower() == 'oct':
+            scan.oct_image_path = f"/api/pngs/oct/{filename}"
+            scan.oct_original_path = f"/api/tifs/oct/{tif_filename}"
+        else:  # Fundus
+            scan.fundus_image_path = f"/api/pngs/fundus/{filename}"
+            scan.fundus_original_path = f"/api/tifs/fundus/{tif_filename}"
+            
+        db.session.add(scan)
         db.session.commit()
         
+        # 分析图像
+        ai_service = AIService()
+        result = ai_service.analyze_image(scan.id, image_type)
+        
+        if not result:
+            return jsonify({'code': 500, 'message': 'AI分析失败'}), 500
+            
+        # 获取分析结果
+        analysis = AIAnalysisResult.query.filter_by(scan_id=scan.id).first()
+        if not analysis:
+            return jsonify({'code': 500, 'message': '无法获取分析结果'}), 500
+            
+        # 生成报告
+        if not analysis.report:
+            report = ai_service.generate_report(analysis.id)
+            analysis.report = report
+            db.session.commit()
+            
+        # 返回结果
         return jsonify({
             'code': 200,
             'message': 'success',
             'data': {
-                'id': str(analysis_result.id),
-                'segmentationImageUrl': analysis_result.segmentation_image_url,
-                'classificationResult': analysis_result.classification_result
+                'id': analysis.id,
+                'scanId': scan.id,
+                'segmentationImageUrl': analysis.segmentation_image_url,
+                'classificationResult': analysis.classification_result,
+                'report': analysis.report,
+                'analyzedAt': analysis.created_at.strftime('%Y-%m-%d %H:%M:%S')
             }
         })
         
     except Exception as e:
         logger.error(f"AI影像分析时出错: {str(e)}")
-        return jsonify({
-            'code': 500,
-            'message': '服务器内部错误'
-        }), 500
+        return jsonify({'code': 500, 'message': f'服务器内部错误: {str(e)}'}), 500
 
 @ai_bp.route('/generate/report', methods=['POST'])
 @login_required
@@ -161,4 +192,60 @@ def get_analysis(analysis_id):
         return jsonify({
             'code': 500,
             'message': '服务器内部错误'
-        }), 500 
+        }), 500
+
+@ai_bp.route('/analyze/scan/<int:scan_id>', methods=['POST'])
+def analyze_scan(scan_id):
+    """分析扫描图像"""
+    try:
+        logger.info(f"扫描记录ID: {scan_id}")
+        
+        # 获取图像类型参数
+        image_type = request.args.get('imageType', 'Fundus')
+        
+        # 获取扫描记录
+        scan = Scan.query.get(scan_id)
+        if not scan:
+            return jsonify({'code': 404, 'message': '扫描记录不存在'}), 404
+            
+        # 记录图像路径
+        logger.info(f"OCT图像路径: {scan.oct_image_path}")
+        logger.info(f"眼底图像路径: {scan.fundus_image_path}")
+        logger.info(f"OCT原始路径: {scan.oct_original_path}")
+        logger.info(f"眼底原始路径: {scan.fundus_original_path}")
+        
+        # 分析图像
+        ai_service = AIService()
+        result = ai_service.analyze_image(scan_id, image_type)
+        
+        if not result:
+            return jsonify({'code': 500, 'message': 'AI分析失败'}), 500
+            
+        # 获取分析结果
+        analysis = AIAnalysisResult.query.filter_by(scan_id=scan_id).first()
+        if not analysis:
+            return jsonify({'code': 500, 'message': '无法获取分析结果'}), 500
+            
+        # 生成报告
+        if not analysis.report:
+            report = ai_service.generate_report(analysis.id)
+            analysis.report = report
+            db.session.commit()
+            
+        # 返回结果
+        return jsonify({
+            'code': 200,
+            'message': 'success',
+            'data': {
+                'id': analysis.id,
+                'scanId': scan_id,
+                'segmentationImageUrl': analysis.segmentation_image_url,
+                'classificationResult': analysis.classification_result,
+                'report': analysis.report,
+                'analyzedAt': analysis.created_at.strftime('%Y-%m-%d %H:%M:%S')
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"AI影像分析时出错: {str(e)}")
+        return jsonify({'code': 500, 'message': f'服务器内部错误: {str(e)}'}), 500 

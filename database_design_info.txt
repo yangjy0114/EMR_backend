@@ -1,0 +1,506 @@
+====================================================================================================
+眼科智能诊断系统数据库设计信息
+====================================================================================================
+生成时间: 2025-04-01 13:36:51
+数据库连接: mysql+mysqlconnector://root:59fh8r22@test-db-mysql.ns-32fwr7d7.svc:3306/test_db
+====================================================================================================
+
+数据库统计信息:
+表数量: 13
+----------------------------------------------------------------------------------------------------
+ai_analysis_results: 5 行, 6 列, 1 个索引, 1 个外键
+departments: 5 行, 4 列, 1 个索引, 0 个外键
+diagnoses: 55 行, 5 列, 1 个索引, 1 个外键
+doctors: 0 行, 3 列, 0 个索引, 0 个外键
+images: 0 行, 5 列, 1 个索引, 1 个外键
+medical_histories: 20 行, 6 列, 1 个索引, 1 个外键
+medical_records: 41 行, 5 列, 2 个索引, 2 个外键
+patients: 20 行, 9 列, 2 个索引, 0 个外键
+prescriptions: 89 行, 10 列, 1 个索引, 1 个外键
+reports: 0 行, 4 列, 1 个索引, 1 个外键
+scans: 16 行, 11 列, 3 个索引, 3 个外键
+segmented_images: 0 行, 6 列, 1 个索引, 1 个外键
+users: 6 行, 11 列, 2 个索引, 1 个外键
+
+
+表结构信息:
+
+====================================================================================================
+表名: ai_analysis_results
+记录数: 5
+----------------------------------------------------------------------------------------------------
+列名                      | 类型           | 可空 | 默认值  | 主键
+-------------------------------------------------------
+id                      | BIGINT       | 否  | None | 是 
+scan_id                 | BIGINT       | 否  | None | 否 
+segmentation_image_path | VARCHAR(255) | 是  | None | 否 
+classification_result   | VARCHAR(100) | 是  | None | 否 
+created_at              | DATETIME     | 是  | None | 否 
+report                  | TEXT         | 是  | None | 否 
+
+主键: id
+外键:
+  scan_id -> scans(id)
+索引:
+  scan_id (scan_id) - 非唯一
+
+====================================================================================================
+表名: departments
+记录数: 5
+----------------------------------------------------------------------------------------------------
+列名          | 类型          | 可空 | 默认值  | 主键
+------------------------------------------
+id          | BIGINT      | 否  | None | 是 
+name        | VARCHAR(50) | 否  | None | 否 
+description | TEXT        | 是  | None | 否 
+created_at  | DATETIME    | 是  | None | 否 
+
+主键: id
+索引:
+  name (name) - 唯一
+
+====================================================================================================
+表名: diagnoses
+记录数: 55
+----------------------------------------------------------------------------------------------------
+列名          | 类型           | 可空 | 默认值  | 主键
+-------------------------------------------
+id          | BIGINT       | 否  | None | 是 
+record_id   | BIGINT       | 否  | None | 否 
+type        | VARCHAR(100) | 否  | None | 否 
+description | TEXT         | 是  | None | 否 
+created_at  | DATETIME     | 是  | None | 否 
+
+主键: id
+外键:
+  record_id -> medical_records(id)
+索引:
+  record_id (record_id) - 非唯一
+
+====================================================================================================
+表名: doctors
+记录数: 0
+----------------------------------------------------------------------------------------------------
+列名             | 类型           | 可空 | 默认值  | 主键
+----------------------------------------------
+doctor_id      | VARCHAR(36)  | 否  | None | 是 
+name           | VARCHAR(100) | 否  | None | 否 
+specialization | VARCHAR(100) | 是  | None | 否 
+
+主键: doctor_id
+
+====================================================================================================
+表名: images
+记录数: 0
+----------------------------------------------------------------------------------------------------
+列名           | 类型           | 可空 | 默认值  | 主键
+--------------------------------------------
+image_id     | VARCHAR(36)  | 否  | None | 是 
+scan_id      | BIGINT       | 否  | None | 否 
+image_type   | VARCHAR(50)  | 否  | None | 否 
+image_path   | VARCHAR(255) | 否  | None | 否 
+is_segmented | TINYINT      | 是  | None | 否 
+
+主键: image_id
+外键:
+  scan_id -> scans(id)
+索引:
+  scan_id (scan_id) - 非唯一
+
+====================================================================================================
+表名: medical_histories
+记录数: 20
+----------------------------------------------------------------------------------------------------
+列名         | 类型       | 可空 | 默认值  | 主键
+--------------------------------------
+id         | BIGINT   | 否  | None | 是 
+patient_id | BIGINT   | 否  | None | 否 
+allergies  | TEXT     | 是  | None | 否 
+history    | TEXT     | 是  | None | 否 
+created_at | DATETIME | 是  | None | 否 
+updated_at | DATETIME | 是  | None | 否 
+
+主键: id
+外键:
+  patient_id -> patients(id)
+索引:
+  patient_id (patient_id) - 非唯一
+
+====================================================================================================
+表名: medical_records
+记录数: 41
+----------------------------------------------------------------------------------------------------
+列名         | 类型       | 可空 | 默认值  | 主键
+--------------------------------------
+id         | BIGINT   | 否  | None | 是 
+patient_id | BIGINT   | 否  | None | 否 
+doctor_id  | BIGINT   | 否  | None | 否 
+visit_time | DATETIME | 否  | None | 否 
+created_at | DATETIME | 是  | None | 否 
+
+主键: id
+外键:
+  patient_id -> patients(id)
+  doctor_id -> users(id)
+索引:
+  doctor_id (doctor_id) - 非唯一
+  patient_id (patient_id) - 非唯一
+
+====================================================================================================
+表名: patients
+记录数: 20
+----------------------------------------------------------------------------------------------------
+列名         | 类型          | 可空 | 默认值  | 主键
+-----------------------------------------
+id         | BIGINT      | 否  | None | 是 
+name       | VARCHAR(50) | 否  | None | 否 
+gender     | VARCHAR(10) | 否  | None | 否 
+age        | INTEGER     | 否  | None | 否 
+serial_no  | VARCHAR(50) | 否  | None | 否 
+card_no    | VARCHAR(50) | 否  | None | 否 
+status     | ENUM        | 否  | None | 否 
+created_at | DATETIME    | 是  | None | 否 
+updated_at | DATETIME    | 是  | None | 否 
+
+主键: id
+索引:
+  card_no (card_no) - 唯一
+  serial_no (serial_no) - 唯一
+
+====================================================================================================
+表名: prescriptions
+记录数: 89
+----------------------------------------------------------------------------------------------------
+列名            | 类型             | 可空 | 默认值  | 主键
+-----------------------------------------------
+id            | BIGINT         | 否  | None | 是 
+record_id     | BIGINT         | 否  | None | 否 
+medicine      | VARCHAR(100)   | 否  | None | 否 
+specification | VARCHAR(100)   | 是  | None | 否 
+dosage        | VARCHAR(50)    | 是  | None | 否 
+frequency     | VARCHAR(50)    | 是  | None | 否 
+days          | VARCHAR(20)    | 是  | None | 否 
+price         | DECIMAL(10, 2) | 是  | None | 否 
+effect        | TEXT           | 是  | None | 否 
+created_at    | DATETIME       | 是  | None | 否 
+
+主键: id
+外键:
+  record_id -> medical_records(id)
+索引:
+  record_id (record_id) - 非唯一
+
+====================================================================================================
+表名: reports
+记录数: 0
+----------------------------------------------------------------------------------------------------
+列名              | 类型          | 可空 | 默认值  | 主键
+----------------------------------------------
+report_id       | VARCHAR(36) | 否  | None | 是 
+scan_id         | BIGINT      | 否  | None | 否 
+report_content  | TEXT        | 否  | None | 否 
+generation_date | DATETIME    | 是  | None | 否 
+
+主键: report_id
+外键:
+  scan_id -> scans(id)
+索引:
+  scan_id (scan_id) - 非唯一
+
+====================================================================================================
+表名: scans
+记录数: 16
+----------------------------------------------------------------------------------------------------
+列名                   | 类型           | 可空 | 默认值  | 主键
+----------------------------------------------------
+id                   | BIGINT       | 否  | None | 是 
+patient_id           | BIGINT       | 否  | None | 否 
+doctor_id            | BIGINT       | 否  | None | 否 
+medical_record_id    | BIGINT       | 是  | None | 否 
+scan_type            | ENUM         | 否  | None | 否 
+scan_time            | DATETIME     | 否  | None | 否 
+oct_image_path       | VARCHAR(255) | 是  | None | 否 
+fundus_image_path    | VARCHAR(255) | 是  | None | 否 
+oct_original_path    | VARCHAR(255) | 是  | None | 否 
+fundus_original_path | VARCHAR(255) | 是  | None | 否 
+created_at           | DATETIME     | 是  | None | 否 
+
+主键: id
+外键:
+  patient_id -> patients(id)
+  doctor_id -> users(id)
+  medical_record_id -> medical_records(id)
+索引:
+  doctor_id (doctor_id) - 非唯一
+  medical_record_id (medical_record_id) - 非唯一
+  patient_id (patient_id) - 非唯一
+
+====================================================================================================
+表名: segmented_images
+记录数: 0
+----------------------------------------------------------------------------------------------------
+列名                   | 类型           | 可空 | 默认值  | 主键
+----------------------------------------------------
+segmented_id         | VARCHAR(36)  | 否  | None | 是 
+image_id             | VARCHAR(36)  | 否  | None | 否 
+segmented_image_path | VARCHAR(255) | 否  | None | 否 
+segmentation_date    | DATETIME     | 是  | None | 否 
+status               | VARCHAR(20)  | 是  | None | 否 
+error_message        | TEXT         | 是  | None | 否 
+
+主键: segmented_id
+外键:
+  image_id -> images(image_id)
+索引:
+  image_id (image_id) - 非唯一
+
+====================================================================================================
+表名: users
+记录数: 6
+----------------------------------------------------------------------------------------------------
+列名            | 类型           | 可空 | 默认值  | 主键
+---------------------------------------------
+id            | BIGINT       | 否  | None | 是 
+username      | VARCHAR(50)  | 否  | None | 否 
+password      | VARCHAR(255) | 否  | None | 否 
+real_name     | VARCHAR(50)  | 否  | None | 否 
+department_id | BIGINT       | 否  | None | 否 
+avatar        | VARCHAR(255) | 是  | None | 否 
+created_at    | DATETIME     | 是  | None | 否 
+updated_at    | DATETIME     | 是  | None | 否 
+last_login_at | DATETIME     | 是  | None | 否 
+login_fails   | INTEGER      | 是  | None | 否 
+is_locked     | TINYINT      | 是  | None | 否 
+
+主键: id
+外键:
+  department_id -> departments(id)
+索引:
+  department_id (department_id) - 非唯一
+  username (username) - 唯一
+
+
+表关系信息:
+----------------------------------------------------------------------------------------------------
+ai_analysis_results(scan_id) -> scans(id)
+diagnoses(record_id) -> medical_records(id)
+images(scan_id) -> scans(id)
+medical_histories(patient_id) -> patients(id)
+medical_records(patient_id) -> patients(id)
+medical_records(doctor_id) -> users(id)
+prescriptions(record_id) -> medical_records(id)
+reports(scan_id) -> scans(id)
+scans(patient_id) -> patients(id)
+scans(doctor_id) -> users(id)
+scans(medical_record_id) -> medical_records(id)
+segmented_images(image_id) -> images(image_id)
+users(department_id) -> departments(id)
+
+
+表创建SQL:
+
+====================================================================================================
+表名: ai_analysis_results
+----------------------------------------------------------------------------------------------------
+CREATE TABLE `ai_analysis_results` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `scan_id` bigint NOT NULL,
+  `segmentation_image_path` varchar(255) DEFAULT NULL,
+  `classification_result` varchar(100) DEFAULT NULL,
+  `created_at` datetime DEFAULT NULL,
+  `report` text,
+  PRIMARY KEY (`id`),
+  KEY `scan_id` (`scan_id`),
+  CONSTRAINT `ai_analysis_results_ibfk_1` FOREIGN KEY (`scan_id`) REFERENCES `scans` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=30 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+
+====================================================================================================
+表名: departments
+----------------------------------------------------------------------------------------------------
+CREATE TABLE `departments` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `name` varchar(50) NOT NULL,
+  `description` text,
+  `created_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`)
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+
+====================================================================================================
+表名: diagnoses
+----------------------------------------------------------------------------------------------------
+CREATE TABLE `diagnoses` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `record_id` bigint NOT NULL,
+  `type` varchar(100) NOT NULL,
+  `description` text,
+  `created_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `record_id` (`record_id`),
+  CONSTRAINT `diagnoses_ibfk_1` FOREIGN KEY (`record_id`) REFERENCES `medical_records` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=56 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+
+====================================================================================================
+表名: doctors
+----------------------------------------------------------------------------------------------------
+CREATE TABLE `doctors` (
+  `doctor_id` varchar(36) NOT NULL,
+  `name` varchar(100) NOT NULL,
+  `specialization` varchar(100) DEFAULT NULL,
+  PRIMARY KEY (`doctor_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+
+====================================================================================================
+表名: images
+----------------------------------------------------------------------------------------------------
+CREATE TABLE `images` (
+  `image_id` varchar(36) NOT NULL,
+  `scan_id` bigint NOT NULL,
+  `image_type` varchar(50) NOT NULL,
+  `image_path` varchar(255) NOT NULL,
+  `is_segmented` tinyint(1) DEFAULT NULL,
+  PRIMARY KEY (`image_id`),
+  KEY `scan_id` (`scan_id`),
+  CONSTRAINT `images_ibfk_1` FOREIGN KEY (`scan_id`) REFERENCES `scans` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+
+====================================================================================================
+表名: medical_histories
+----------------------------------------------------------------------------------------------------
+CREATE TABLE `medical_histories` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `patient_id` bigint NOT NULL,
+  `allergies` text,
+  `history` text,
+  `created_at` datetime DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `patient_id` (`patient_id`),
+  CONSTRAINT `medical_histories_ibfk_1` FOREIGN KEY (`patient_id`) REFERENCES `patients` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=21 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+
+====================================================================================================
+表名: medical_records
+----------------------------------------------------------------------------------------------------
+CREATE TABLE `medical_records` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `patient_id` bigint NOT NULL,
+  `doctor_id` bigint NOT NULL,
+  `visit_time` datetime NOT NULL,
+  `created_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `patient_id` (`patient_id`),
+  KEY `doctor_id` (`doctor_id`),
+  CONSTRAINT `medical_records_ibfk_1` FOREIGN KEY (`patient_id`) REFERENCES `patients` (`id`),
+  CONSTRAINT `medical_records_ibfk_2` FOREIGN KEY (`doctor_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=42 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+
+====================================================================================================
+表名: patients
+----------------------------------------------------------------------------------------------------
+CREATE TABLE `patients` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `name` varchar(50) NOT NULL,
+  `gender` varchar(10) NOT NULL,
+  `age` int NOT NULL,
+  `serial_no` varchar(50) NOT NULL,
+  `card_no` varchar(50) NOT NULL,
+  `status` enum('waiting','in_treatment','treated') NOT NULL,
+  `created_at` datetime DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `serial_no` (`serial_no`),
+  UNIQUE KEY `card_no` (`card_no`)
+) ENGINE=InnoDB AUTO_INCREMENT=21 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+
+====================================================================================================
+表名: prescriptions
+----------------------------------------------------------------------------------------------------
+CREATE TABLE `prescriptions` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `record_id` bigint NOT NULL,
+  `medicine` varchar(100) NOT NULL,
+  `specification` varchar(100) DEFAULT NULL,
+  `dosage` varchar(50) DEFAULT NULL,
+  `frequency` varchar(50) DEFAULT NULL,
+  `days` varchar(20) DEFAULT NULL,
+  `price` decimal(10,2) DEFAULT NULL,
+  `effect` text,
+  `created_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `record_id` (`record_id`),
+  CONSTRAINT `prescriptions_ibfk_1` FOREIGN KEY (`record_id`) REFERENCES `medical_records` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=90 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+
+====================================================================================================
+表名: reports
+----------------------------------------------------------------------------------------------------
+CREATE TABLE `reports` (
+  `report_id` varchar(36) NOT NULL,
+  `scan_id` bigint NOT NULL,
+  `report_content` text NOT NULL,
+  `generation_date` datetime DEFAULT NULL,
+  PRIMARY KEY (`report_id`),
+  KEY `scan_id` (`scan_id`),
+  CONSTRAINT `reports_ibfk_1` FOREIGN KEY (`scan_id`) REFERENCES `scans` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+
+====================================================================================================
+表名: scans
+----------------------------------------------------------------------------------------------------
+CREATE TABLE `scans` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `patient_id` bigint NOT NULL,
+  `doctor_id` bigint NOT NULL,
+  `medical_record_id` bigint DEFAULT NULL,
+  `scan_type` enum('OCT','Fundus','Both') NOT NULL,
+  `scan_time` datetime NOT NULL,
+  `oct_image_path` varchar(255) DEFAULT NULL,
+  `fundus_image_path` varchar(255) DEFAULT NULL,
+  `oct_original_path` varchar(255) DEFAULT NULL,
+  `fundus_original_path` varchar(255) DEFAULT NULL,
+  `created_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `patient_id` (`patient_id`),
+  KEY `doctor_id` (`doctor_id`),
+  KEY `medical_record_id` (`medical_record_id`),
+  CONSTRAINT `scans_ibfk_1` FOREIGN KEY (`patient_id`) REFERENCES `patients` (`id`),
+  CONSTRAINT `scans_ibfk_2` FOREIGN KEY (`doctor_id`) REFERENCES `users` (`id`),
+  CONSTRAINT `scans_ibfk_3` FOREIGN KEY (`medical_record_id`) REFERENCES `medical_records` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=18 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+
+====================================================================================================
+表名: segmented_images
+----------------------------------------------------------------------------------------------------
+CREATE TABLE `segmented_images` (
+  `segmented_id` varchar(36) NOT NULL,
+  `image_id` varchar(36) NOT NULL,
+  `segmented_image_path` varchar(255) NOT NULL,
+  `segmentation_date` datetime DEFAULT NULL,
+  `status` varchar(20) DEFAULT NULL,
+  `error_message` text,
+  PRIMARY KEY (`segmented_id`),
+  KEY `image_id` (`image_id`),
+  CONSTRAINT `segmented_images_ibfk_1` FOREIGN KEY (`image_id`) REFERENCES `images` (`image_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+
+====================================================================================================
+表名: users
+----------------------------------------------------------------------------------------------------
+CREATE TABLE `users` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `username` varchar(50) NOT NULL,
+  `password` varchar(255) NOT NULL,
+  `real_name` varchar(50) NOT NULL,
+  `department_id` bigint NOT NULL,
+  `avatar` varchar(255) DEFAULT NULL,
+  `created_at` datetime DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  `last_login_at` datetime DEFAULT NULL,
+  `login_fails` int DEFAULT NULL,
+  `is_locked` tinyint(1) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `username` (`username`),
+  KEY `department_id` (`department_id`),
+  CONSTRAINT `users_ibfk_1` FOREIGN KEY (`department_id`) REFERENCES `departments` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci

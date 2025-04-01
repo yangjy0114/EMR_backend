@@ -1,13 +1,14 @@
 import os
 import uuid
 from flask import Blueprint, request, jsonify, send_file, current_app
-from models import db, Scan, Patient, User
+from models import db, Scan, Patient, User, PatientScanMapping
 from utils.auth import login_required
 import logging
 from datetime import datetime
 from werkzeug.utils import secure_filename
 from PIL import Image
 import numpy as np
+import re
 
 logger = logging.getLogger(__name__)
 scan_bp = Blueprint('scan', __name__, url_prefix='/api/scans')
@@ -142,6 +143,9 @@ def get_patient_scans(patient_id):
         # 获取患者的所有扫描记录
         scans = Scan.query.filter_by(patient_id=patient_id).order_by(Scan.scan_time.desc()).all()
         
+        # 记录查询结果
+        logger.info(f"找到 {len(scans)} 条扫描记录，patient_id={patient_id}")
+        
         return jsonify({
             'code': 200,
             'message': 'success',
@@ -202,19 +206,17 @@ def get_scan_detail(scan_id):
             'message': '服务器内部错误'
         }), 500
 
-@scan_bp.route('', methods=['POST'])
+@scan_bp.route('/upload', methods=['POST'])
 @login_required
 def upload_scan():
-    """上传新扫描记录"""
+    """上传新的扫描记录"""
     try:
-        # 验证必要字段
+        # 获取请求参数
         patient_id = request.form.get('patientId')
-        scan_type = request.form.get('scanType')
-        
-        if not patient_id or not scan_type:
+        if not patient_id:
             return jsonify({
                 'code': 400,
-                'message': '缺少必要参数'
+                'message': '缺少患者ID参数'
             }), 400
             
         # 验证患者是否存在
@@ -230,121 +232,112 @@ def upload_scan():
         from utils.auth import Auth
         doctor_id = Auth.verify_token(token)
         
-        # 验证扫描类型
-        if scan_type not in ['OCT', 'Fundus', 'Both']:
+        # 获取医生信息
+        doctor = User.query.get(doctor_id)
+        if not doctor:
+            return jsonify({
+                'code': 401,
+                'message': '无效的用户'
+            }), 401
+            
+        # 检查是否有文件上传
+        if 'octImage' not in request.files and 'fundusImage' not in request.files:
             return jsonify({
                 'code': 400,
-                'message': '无效的扫描类型'
+                'message': '没有上传图像文件'
             }), 400
             
-        # 处理文件上传
+        # 获取OCT图像
+        oct_file = request.files.get('octImage')
         oct_image_path = None
-        fundus_image_path = None
         oct_original_path = None
-        fundus_original_path = None
-        timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
         
-        # 确保上传目录存在
-        upload_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], 'scans')
-        original_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], 'originals')
-        os.makedirs(upload_folder, exist_ok=True)
-        os.makedirs(original_folder, exist_ok=True)
+        # 获取眼底图像
+        fundus_file = request.files.get('fundusImage')
+        fundus_image_path = None
+        fundus_original_path = None
+        
+        # 获取最新的图像序号
+        latest_oct_number = get_latest_image_number('oct')
+        latest_fundus_number = get_latest_image_number('fundus')
         
         # 处理OCT图像
-        if 'octImage' in request.files and (scan_type == 'OCT' or scan_type == 'Both'):
-            oct_file = request.files['octImage']
-            if oct_file and oct_file.filename and allowed_file(oct_file.filename):
-                # 获取文件扩展名
-                ext = oct_file.filename.rsplit('.', 1)[1].lower()
+        if oct_file and oct_file.filename:
+            if allowed_file(oct_file.filename):
+                # 生成新的文件名
+                new_oct_number = latest_oct_number + 1
+                oct_filename = f"p{new_oct_number:03d}_oct.png"
+                oct_tif_filename = f"p{new_oct_number:03d}_oct.tif"
                 
-                # 保存原始文件
-                original_filename = f"{patient_id}_OCT_{timestamp}.{ext}"
-                original_filename = secure_filename(original_filename)
-                original_path = os.path.join(original_folder, original_filename)
-                oct_file.save(original_path)
-                oct_original_path = f"/api/originals/{original_filename}"
+                # 保存PNG文件
+                oct_png_path = os.path.join(current_app.config['UPLOAD_FOLDER_OCT'], oct_filename)
+                oct_file.save(oct_png_path)
+                oct_image_path = f"/api/pngs/oct/{oct_filename}"
                 
-                # 如果是TIF格式，转换为PNG
-                if ext in ['tif', 'tiff']:
-                    png_filename = f"{patient_id}_OCT_{timestamp}.png"
-                    png_filename = secure_filename(png_filename)
-                    png_path = os.path.join(upload_folder, png_filename)
-                    
-                    if convert_tif_to_png(original_path, png_path):
-                        oct_image_path = f"/api/images/{png_filename}"
-                    else:
-                        return jsonify({
-                            'code': 500,
-                            'message': 'OCT图像转换失败'
-                        }), 500
+                # 保存TIF文件（如果原始文件是TIF格式）
+                if oct_file.filename.lower().endswith(('.tif', '.tiff')):
+                    oct_tif_path = os.path.join(current_app.config['ORIGINAL_FOLDER_OCT'], oct_tif_filename)
+                    oct_file.seek(0)  # 重置文件指针
+                    oct_file.save(oct_tif_path)
+                    oct_original_path = f"/api/tifs/oct/{oct_tif_filename}"
                 else:
-                    # 如果已经是支持的格式，直接复制
-                    display_filename = f"{patient_id}_OCT_{timestamp}.{ext}"
-                    display_filename = secure_filename(display_filename)
-                    display_path = os.path.join(upload_folder, display_filename)
-                    
-                    # 复制文件
-                    with open(original_path, 'rb') as src, open(display_path, 'wb') as dst:
-                        dst.write(src.read())
-                    
-                    oct_image_path = f"/api/images/{display_filename}"
+                    # 如果原始文件不是TIF格式，将PNG转换为TIF
+                    oct_tif_path = os.path.join(current_app.config['ORIGINAL_FOLDER_OCT'], oct_tif_filename)
+                    convert_png_to_tif(oct_png_path, oct_tif_path)
+                    oct_original_path = f"/api/tifs/oct/{oct_tif_filename}"
+                
+                logger.info(f"OCT图像已保存: {oct_png_path}")
             else:
                 return jsonify({
                     'code': 400,
-                    'message': 'OCT图像格式不支持或未提供'
+                    'message': f"不支持的OCT图像格式: {oct_file.filename}"
                 }), 400
-                
+        
         # 处理眼底图像
-        if 'fundusImage' in request.files and (scan_type == 'Fundus' or scan_type == 'Both'):
-            fundus_file = request.files['fundusImage']
-            if fundus_file and fundus_file.filename and allowed_file(fundus_file.filename):
-                # 获取文件扩展名
-                ext = fundus_file.filename.rsplit('.', 1)[1].lower()
+        if fundus_file and fundus_file.filename:
+            if allowed_file(fundus_file.filename):
+                # 生成新的文件名
+                new_fundus_number = latest_fundus_number + 1
+                fundus_filename = f"p{new_fundus_number:03d}_fundus.png"
+                fundus_tif_filename = f"p{new_fundus_number:03d}_fundus.tif"
                 
-                # 保存原始文件
-                original_filename = f"{patient_id}_Fundus_{timestamp}.{ext}"
-                original_filename = secure_filename(original_filename)
-                original_path = os.path.join(original_folder, original_filename)
-                fundus_file.save(original_path)
-                fundus_original_path = f"/api/originals/{original_filename}"
+                # 保存PNG文件
+                fundus_png_path = os.path.join(current_app.config['UPLOAD_FOLDER_FUNDUS'], fundus_filename)
+                fundus_file.save(fundus_png_path)
+                fundus_image_path = f"/api/pngs/fundus/{fundus_filename}"
                 
-                # 如果是TIF格式，转换为PNG
-                if ext in ['tif', 'tiff']:
-                    png_filename = f"{patient_id}_Fundus_{timestamp}.png"
-                    png_filename = secure_filename(png_filename)
-                    png_path = os.path.join(upload_folder, png_filename)
-                    
-                    if convert_tif_to_png(original_path, png_path):
-                        fundus_image_path = f"/api/images/{png_filename}"
-                    else:
-                        return jsonify({
-                            'code': 500,
-                            'message': '眼底图像转换失败'
-                        }), 500
+                # 保存TIF文件（如果原始文件是TIF格式）
+                if fundus_file.filename.lower().endswith(('.tif', '.tiff')):
+                    fundus_tif_path = os.path.join(current_app.config['ORIGINAL_FOLDER_FUNDUS'], fundus_tif_filename)
+                    fundus_file.seek(0)  # 重置文件指针
+                    fundus_file.save(fundus_tif_path)
+                    fundus_original_path = f"/api/tifs/fundus/{fundus_tif_filename}"
                 else:
-                    # 如果已经是支持的格式，直接复制
-                    display_filename = f"{patient_id}_Fundus_{timestamp}.{ext}"
-                    display_filename = secure_filename(display_filename)
-                    display_path = os.path.join(upload_folder, display_filename)
-                    
-                    # 复制文件
-                    with open(original_path, 'rb') as src, open(display_path, 'wb') as dst:
-                        dst.write(src.read())
-                    
-                    fundus_image_path = f"/api/images/{display_filename}"
+                    # 如果原始文件不是TIF格式，将PNG转换为TIF
+                    fundus_tif_path = os.path.join(current_app.config['ORIGINAL_FOLDER_FUNDUS'], fundus_tif_filename)
+                    convert_png_to_tif(fundus_png_path, fundus_tif_path)
+                    fundus_original_path = f"/api/tifs/fundus/{fundus_tif_filename}"
+                
+                logger.info(f"眼底图像已保存: {fundus_png_path}")
             else:
                 return jsonify({
                     'code': 400,
-                    'message': '眼底图像格式不支持或未提供'
+                    'message': f"不支持的眼底图像格式: {fundus_file.filename}"
                 }), 400
-                
-        # 验证是否至少上传了一张图像
-        if not oct_image_path and not fundus_image_path:
+        
+        # 确定扫描类型
+        if oct_image_path and fundus_image_path:
+            scan_type = 'Both'
+        elif oct_image_path:
+            scan_type = 'OCT'
+        elif fundus_image_path:
+            scan_type = 'Fundus'
+        else:
             return jsonify({
                 'code': 400,
-                'message': '至少需要上传一张图像'
+                'message': '没有有效的图像文件'
             }), 400
-            
+        
         # 创建扫描记录
         scan = Scan(
             patient_id=patient_id,
@@ -354,29 +347,31 @@ def upload_scan():
             oct_image_path=oct_image_path,
             fundus_image_path=fundus_image_path,
             oct_original_path=oct_original_path,
-            fundus_original_path=fundus_original_path
+            fundus_original_path=fundus_original_path,
+            created_at=datetime.utcnow()
         )
         db.session.add(scan)
         db.session.commit()
         
         return jsonify({
             'code': 200,
-            'message': 'success',
+            'message': '扫描记录上传成功',
             'data': {
-                'id': str(scan.id),
-                'timestamp': scan.scan_time.strftime('%Y%m%d%H%M%S'),
-                'octImageUrl': oct_image_path,
-                'fundusImageUrl': fundus_image_path,
-                'octOriginalUrl': oct_original_path,
-                'fundusOriginalUrl': fundus_original_path
+                'id': scan.id,
+                'patientId': patient_id,
+                'scanType': scan_type,
+                'octImage': oct_image_path,
+                'fundusImage': fundus_image_path,
+                'timestamp': scan.scan_time.strftime('%Y%m%d%H%M%S')
             }
         })
         
     except Exception as e:
         logger.error(f"上传扫描记录时出错: {str(e)}")
+        db.session.rollback()
         return jsonify({
             'code': 500,
-            'message': '服务器内部错误'
+            'message': f'服务器内部错误: {str(e)}'
         }), 500
 
 @scan_bp.route('/link/<int:scan_id>/record/<int:record_id>', methods=['PUT'])
@@ -422,4 +417,49 @@ def link_to_record(scan_id, record_id):
         return jsonify({
             'code': 500,
             'message': '服务器内部错误'
-        }), 500 
+        }), 500
+
+def get_latest_image_number(image_type):
+    """获取最新的图像序号"""
+    try:
+        if image_type.lower() == 'oct':
+            folder_path = current_app.config['UPLOAD_FOLDER_OCT']
+        else:  # fundus
+            folder_path = current_app.config['UPLOAD_FOLDER_FUNDUS']
+        
+        # 获取文件夹中的所有文件
+        files = os.listdir(folder_path)
+        
+        # 筛选出符合命名规则的文件
+        pattern = r'p(\d+)_' + image_type.lower() + r'\.png'
+        numbers = []
+        
+        for file in files:
+            match = re.match(pattern, file)
+            if match:
+                number = int(match.group(1))
+                numbers.append(number)
+        
+        # 如果没有找到符合规则的文件，返回0
+        if not numbers:
+            return 0
+        
+        # 返回最大的序号
+        return max(numbers)
+        
+    except Exception as e:
+        logger.error(f"获取最新图像序号时出错: {str(e)}")
+        return 0
+
+def convert_png_to_tif(png_path, tif_path):
+    """将PNG图像转换为TIF格式"""
+    try:
+        # 打开PNG图像
+        with Image.open(png_path) as img:
+            # 保存为TIF
+            img.save(tif_path, 'TIFF')
+        
+        return True
+    except Exception as e:
+        logger.error(f"转换图像格式时出错: {str(e)}")
+        return False 

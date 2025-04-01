@@ -4,7 +4,7 @@ class Config:
     """基础配置类"""
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'hard-to-guess-string'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    UPLOAD_FOLDER = 'uploads'
+    UPLOAD_FOLDER = 'images/pngs'
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB
 
 class DevelopmentConfig(Config):

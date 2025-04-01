@@ -45,19 +45,22 @@ class Predictor:
             logger.error(f"加载模型失败: {str(e)}")
             raise
             
-    def predict(self, image_path, output_path):
+    def predict(self, input_path, output_path):
         """执行图像分割预测
         
         Args:
-            image_path: 输入图像路径
+            input_path: 输入图像路径
             output_path: 输出图像保存路径
             
         Returns:
             bool: 是否成功
         """
         try:
+            # 只创建输出目录
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            
             # 加载图像
-            original_img = Image.open(image_path).convert('RGB')
+            original_img = Image.open(input_path).convert('RGB')
             
             # 预处理
             img = self.transform(original_img)

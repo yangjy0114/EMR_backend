@@ -25,15 +25,31 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
     'mysql+mysqlconnector://root:59fh8r22@test-db-mysql.ns-32fwr7d7.svc:3306/test_db'
 )
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['UPLOAD_FOLDER'] = 'images/original'
+app.config['UPLOAD_FOLDER_FUNDUS'] = 'images/pngs/fundus'
+app.config['UPLOAD_FOLDER_OCT'] = 'images/pngs/oct'
+app.config['ORIGINAL_FOLDER_FUNDUS'] = 'images/tifs/fundus'
+app.config['ORIGINAL_FOLDER_OCT'] = 'images/tifs/oct'
+app.config['SEGMENTATION_FOLDER'] = 'images/segmentation/fundus'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB 最大文件大小
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key')
 
-# 确保上传目录存在
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-os.makedirs('images/segmented', exist_ok=True)
-os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'scans'), exist_ok=True)
-os.makedirs('images/segmentation', exist_ok=True)
+# 确保必要的文件夹存在
+def ensure_folders():
+    """确保必要的文件夹存在"""
+    folders = [
+        app.config['UPLOAD_FOLDER_FUNDUS'],
+        app.config['UPLOAD_FOLDER_OCT'],
+        app.config['ORIGINAL_FOLDER_FUNDUS'],
+        app.config['ORIGINAL_FOLDER_OCT'],
+        app.config['SEGMENTATION_FOLDER']
+    ]
+    
+    for folder in folders:
+        os.makedirs(folder, exist_ok=True)
+        logger.info(f"确保文件夹存在: {folder}")
+
+# 在创建app后调用
+ensure_folders()
 
 # 初始化数据库
 db.init_app(app)
@@ -105,62 +121,49 @@ def upload_image():
         
         if not files:
             logger.warning("没有接收到任何文件")
-            return jsonify({'error': '没有上传文件'}), 400
-        
+            return jsonify({'error': '没有上传任何图片'}), 400
+            
         for file in files:
-            logger.info(f"处理文件: {file.filename}")
-            if not file.filename:
-                logger.warning("文件名为空")
-                continue
-                
             if file and allowed_file(file.filename):
-                # 生成时间戳
+                # 安全地获取文件名
+                original_filename = secure_filename(file.filename)
+                
+                # 生成新的文件名，确保唯一性
+                file_ext = original_filename.rsplit('.', 1)[1].lower()
                 timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+                new_filename = f"{patient_id}_{timestamp}_{original_filename}"
                 
-                # 从原始文件名中获取患者ID和类型
-                original_filename = file.filename.lower()
-                if 'oct' in original_filename:
-                    file_type = 'oct'
-                elif 'fundus' in original_filename:
-                    file_type = 'fundus'
-                else:
-                    logger.warning(f"无法从文件名确定图像类型: {file.filename}")
-                    continue
-                
-                # 提取患者ID（假设格式为 p001_xxx.tif）
-                try:
-                    patient_prefix = original_filename.split('_')[0]
-                except:
-                    patient_prefix = f"p{patient_id}"  # 如果无法从文件名获取，使用传入的patient_id
-                
-                new_filename = f"{patient_prefix}_{file_type}_{timestamp}.{file.filename.rsplit('.', 1)[1].lower()}"
-                
+                # 确保文件名安全
                 filename = secure_filename(new_filename)
-                file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file_path = os.path.join(app.config['UPLOAD_FOLDER_FUNDUS'] if 'fundus' in filename.lower() else app.config['UPLOAD_FOLDER_OCT'], filename)
                 
                 try:
+                    # 保存文件
                     file.save(file_path)
-                    logger.info(f"文件保存到: {file_path}")
+                    logger.info(f"文件已保存: {file_path}")
+                    
+                    # 创建图像记录
+                    image = Image(
+                        image_id=str(uuid.uuid4()),
+                        scan_id=scan.scan_id,
+                        image_path=file_path,
+                        image_type='fundus' if 'fundus' in filename.lower() else 'oct',
+                        upload_date=datetime.utcnow()
+                    )
+                    db.session.add(image)
+                    
+                    # 添加到上传成功列表
+                    uploaded_images.append({
+                        'image_id': image.image_id,
+                        'filename': filename,
+                        'path': file_path
+                    })
+                    
                 except Exception as e:
                     logger.error(f"保存文件时出错: {str(e)}")
-                    continue
-                
-                # 创建图像记录
-                image = Image(
-                    image_id=str(uuid.uuid4()),
-                    scan_id=scan.scan_id,
-                    image_type='OCT' if 'oct' in filename.lower() else '眼底图像',
-                    image_path=file_path
-                )
-                db.session.add(image)
-                uploaded_images.append({
-                    'image_id': image.image_id,
-                    'image_type': image.image_type,
-                    'filename': filename
-                })
-                logger.info(f"图像记录已创建: {image.image_id}")
+                    return jsonify({'error': f'保存文件时出错: {str(e)}'}), 500
             else:
-                logger.warning(f"文件 {file.filename} 不被允许或无效")
+                logger.warning(f"无效的文件: {file.filename if file else 'None'}")
         
         if not uploaded_images:
             logger.warning("没有成功上传任何图片")
@@ -286,17 +289,22 @@ def get_segmented_image(segmented_id):
         logger.error(f"获取分割图像时发生错误: {str(e)}")
         return jsonify({'error': '服务器内部错误'}), 500
 
-@app.route('/api/images/<filename>', methods=['GET'])
+@app.route('/api/pngs/<path:filename>', methods=['GET'])
 def get_image(filename):
-    """获取图像文件"""
+    """获取PNG图像文件"""
     try:
         # 安全检查：防止路径遍历攻击
         if '..' in filename or filename.startswith('/'):
             return jsonify({'error': '无效的文件名'}), 400
             
-        # 构建文件路径
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], 'scans', filename)
-        
+        # 确定图像类型和路径
+        if filename.startswith('fundus/'):
+            file_path = os.path.join(app.config['UPLOAD_FOLDER_FUNDUS'], os.path.basename(filename))
+        elif filename.startswith('oct/'):
+            file_path = os.path.join(app.config['UPLOAD_FOLDER_OCT'], os.path.basename(filename))
+        else:
+            return jsonify({'error': '无效的图像路径'}), 400
+            
         # 检查文件是否存在
         if not os.path.exists(file_path):
             return jsonify({'error': '文件不存在'}), 404
@@ -308,17 +316,22 @@ def get_image(filename):
         logger.error(f"获取图像文件时出错: {str(e)}")
         return jsonify({'error': '服务器内部错误'}), 500
 
-@app.route('/api/originals/<filename>', methods=['GET'])
+@app.route('/api/tifs/<path:filename>', methods=['GET'])
 def get_original_image(filename):
-    """获取原始图像文件"""
+    """获取TIF原始图像文件"""
     try:
         # 安全检查：防止路径遍历攻击
         if '..' in filename or filename.startswith('/'):
             return jsonify({'error': '无效的文件名'}), 400
             
-        # 构建文件路径
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], 'originals', filename)
-        
+        # 确定图像类型和路径
+        if filename.startswith('fundus/'):
+            file_path = os.path.join(app.config['ORIGINAL_FOLDER_FUNDUS'], os.path.basename(filename))
+        elif filename.startswith('oct/'):
+            file_path = os.path.join(app.config['ORIGINAL_FOLDER_OCT'], os.path.basename(filename))
+        else:
+            return jsonify({'error': '无效的图像路径'}), 400
+            
         # 检查文件是否存在
         if not os.path.exists(file_path):
             return jsonify({'error': '文件不存在'}), 404
@@ -330,7 +343,7 @@ def get_original_image(filename):
         logger.error(f"获取原始图像文件时出错: {str(e)}")
         return jsonify({'error': '服务器内部错误'}), 500
 
-@app.route('/api/images/segmentation/<filename>', methods=['GET'])
+@app.route('/api/segmentation/<path:filename>', methods=['GET'])
 def get_segmentation_image(filename):
     """获取分割图像文件"""
     try:
@@ -338,9 +351,13 @@ def get_segmentation_image(filename):
         if '..' in filename or filename.startswith('/'):
             return jsonify({'error': '无效的文件名'}), 400
             
-        # 构建文件路径
-        file_path = os.path.join('images/segmentation', filename)
-        
+        # 确定图像路径
+        if filename.startswith('fundus/'):
+            file_path = os.path.join(app.config['SEGMENTATION_FOLDER'], os.path.basename(filename))
+        else:
+            # 如果没有指定类型，假设是眼底图像
+            file_path = os.path.join(app.config['SEGMENTATION_FOLDER'], filename)
+            
         # 检查文件是否存在
         if not os.path.exists(file_path):
             return jsonify({'error': '文件不存在'}), 404
